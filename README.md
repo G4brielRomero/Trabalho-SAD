@@ -14,7 +14,7 @@ A temperatura afeta decisões em várias áreas:
 - **Energia:** meses mais quentes aumentam o consumo (ar-condicionado).
 - **Saúde pública:** ondas de calor pedem campanhas de hidratação e atenção a idosos.
 
-**Pergunta:** *com base nas temperaturas dos últimos 12 meses, qual será a temperatura média dos próximos meses? E ela vai ficar acima ou abaixo do normal para a época?*
+**Pergunta:** _com base nas temperaturas dos últimos 12 meses, qual será a temperatura média dos próximos meses? E ela vai ficar acima ou abaixo do normal para a época?_
 
 ## 2. Dataset
 
@@ -23,10 +23,10 @@ A temperatura afeta decisões em várias áreas:
 - **Formato original:** uma linha por ano e uma coluna por mês (`JAN` ... `DEC`), com temperaturas médias mensais em °C.
 - **Valores ausentes:** meses sem medição aparecem com o código `999.90`.
 
-| Variável | Tipo | Descrição |
-|---|---|---|
+| Variável                  | Tipo        | Descrição                                      |
+| ------------------------- | ----------- | ---------------------------------------------- |
 | `t-1`, `t-2`, ..., `t-12` | **Entrada** | Temperatura média de 1, 2, ..., 12 meses atrás |
-| `temperatura` | **Alvo** | Temperatura média do mês que queremos prever |
+| `temperatura`             | **Alvo**    | Temperatura média do mês que queremos prever   |
 
 ## 3. Estrutura do projeto
 
@@ -73,6 +73,7 @@ streamlit run app.py
 ## 5. O que cada etapa faz
 
 ### 5.1 Pré-processamento (`1_preprocessamento.py`)
+
 1. Transforma a tabela de "uma linha por ano" em "uma linha por mês" (série temporal).
 2. Troca o código `999.90` por valor vazio.
 3. Remove os meses vazios do começo e do fim da série.
@@ -82,17 +83,21 @@ streamlit run app.py
 A **normalização** (`StandardScaler`) é feita no script 2, dentro do pipeline da rede neural. Assim, a média e o desvio são calculados só com os dados de treino.
 
 ### 5.2 Modelos (`2_treinamento.py`)
+
 - **Divisão treino/teste:** 80% dos meses mais antigos para treino, 20% mais recentes para teste. Em série temporal os dados **não são embaralhados**: o modelo aprende com o passado e é testado no "futuro".
 - **Rede Neural (MLP)**, o modelo principal: 12 entradas → 1 camada oculta com 16 neurônios (ReLU) → 1 saída. Usa regularização `alpha=1.0` para evitar overfitting.
 - **Árvore de Decisão**, para comparação: `max_depth=5`.
 
 ### 5.3 Avaliação (`3_avaliacao.py`)
+
 Calcula **MAE, MSE, RMSE e R²** nos dados de teste. Também compara com uma **referência sem IA**: "repetir a temperatura do mesmo mês do ano anterior". Um modelo útil precisa ser melhor que essa referência.
 
 ### 5.4 Persistência
+
 Os modelos treinados são salvos com `joblib` em `modelos/*.joblib`. O dashboard carrega esses arquivos, sem precisar treinar de novo.
 
 ### 5.5 Dashboard (`app.py`)
+
 - **Previsão:** gráfico e tabela dos próximos 1 a 24 meses, com comparação com a média histórica e alertas de "acima/abaixo do normal".
 - **Desempenho do modelo:** tabela de métricas e gráfico real × previsto.
 - **Histórico e insights:** série completa, média por mês do ano (sazonalidade) e média por década (tendência de aquecimento).
@@ -102,13 +107,13 @@ Os modelos treinados são salvos com `joblib` em `modelos/*.joblib`. O dashboard
 
 Saída do `3_avaliacao.py` (dados de teste):
 
-| Modelo | MAE (°C) | MSE | RMSE (°C) | R² |
-|---|---|---|---|---|
-| Rede Neural (MLP) | – | – | – | – |
-| Árvore de Decisão | – | – | – | – |
-| Referência (repetir o ano anterior) | – | – | – | – |
+| Modelo                              | MAE (°C) | MSE   | RMSE (°C) | R²    |
+| ----------------------------------- | -------- | ----- | --------- | ----- |
+| Rede Neural (MLP)                   | 0,728    | 0,850 | 0,922     | 0,595 |
+| Árvore de Decisão                   | 0,830    | 1,124 | 1,060     | 0,465 |
+| Referência (repetir o ano anterior) | 0,767    | 0,926 | 0,962     | 0,559 |
 
-> Preencha com os valores do arquivo `resultados/metricas.csv` depois de rodar o script 3.
+A Rede Neural teve o menor erro: em média, erra cerca de 0,7 °C. Ela foi um pouco melhor que a referência, e a Árvore de Decisão ficou abaixo da referência. A temperatura mensal é muito sazonal, então repetir o valor do ano anterior já é uma referência difícil de bater.
 
 ## 7. Limitações e melhorias futuras
 
