@@ -1,0 +1,4 @@
+Modelo,MAE,MSE,RMSE,R²
+Rede Neural (MLP),0.728,0.85,0.922,0.595
+Árvore de Decisão,0.83,1.124,1.06,0.465
+Referência (repetir o ano anterior),0.767,0.926,0.962,0.559
