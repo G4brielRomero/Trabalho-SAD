@@ -1,127 +1,47 @@
-# 🌡️ Previsão de Temperatura Média Mensal com Rede Neural
+# Previsão da temperatura média mensal em Goiânia
 
-Trabalho bimestral de **Sistemas de Apoio à Decisão**, Bacharelado em Sistemas de Informação, UFMS (Câmpus de Três Lagoas).
+Trabalho de Sistemas de Apoio à Decisão da UFMS, Câmpus de Três Lagoas.
 
-Dashboard interativo que prevê a temperatura média mensal de uma cidade brasileira usando uma **Rede Neural (MLP)** e mostra os resultados para apoiar decisões.
+**A rede neural ajuda a prever a temperatura média do mês seguinte?** Comparamos uma rede neural, uma árvore de decisão e duas regras simples. A principal referência repete a temperatura do mesmo mês do ano anterior, aproveitando a sazonalidade.
 
----
+## Dados e método
 
-## 1. Problema
+A [série original](dados/station_goiania.csv) vai de janeiro de 1961 a outubro de 2019, considerando a primeira e a última medição disponível. O arquivo vem do [conjunto de séries de temperatura de cidades brasileiras](https://www.kaggle.com/datasets/volpatto/temperature-timeseries-for-some-brazilian-cities).
 
-A temperatura afeta decisões em várias áreas:
+- Cada previsão usa 12 entradas. `t-1` é a temperatura do mês anterior e `t-12`, a do mesmo mês do ano anterior.
+- O treino usa 453 meses com alvo medido, de janeiro de 1962 a março de 2008. O teste usa 136 meses com alvo medido, de abril de 2008 a outubro de 2019. A ordem do calendário é mantida.
+- A série tem 105 lacunas internas. Quando uma lacuna aparece nas entradas, usamos a média das medições daquele mês do ano entre janeiro de 1961 e março de 2008, arredondada para duas casas. Mantemos o campo de medição vazio e excluímos esse mês como alvo.
+- A rede tem uma camada oculta de 16 neurônios. As entradas são padronizadas com dados do treino. A árvore tem profundidade máxima 5.
 
-- **Agronegócio:** planejamento de plantio, irrigação e proteção de rebanhos contra o calor.
-- **Energia:** meses mais quentes aumentam o consumo (ar-condicionado).
-- **Saúde pública:** ondas de calor pedem campanhas de hidratação e atenção a idosos.
+## Resultado para um mês à frente
 
-**Pergunta:** _com base nas temperaturas dos últimos 12 meses, qual será a temperatura média dos próximos meses? E ela vai ficar acima ou abaixo do normal para a época?_
+| Método | MAE (°C) | RMSE (°C) | R² |
+| --- | ---: | ---: | ---: |
+| Rede neural (MLP) | 0,661 | 0,860 | 0,650 |
+| Árvore de decisão | 0,798 | 1,102 | 0,426 |
+| Mesmo mês do ano anterior¹ | 0,764 | 0,963 | 0,562 |
+| Média do mês no treino | 1,016 | 1,212 | 0,305 |
 
-## 2. Dataset
+¹ Quando falta a medição do ano anterior, a regra usa a média mensal do treino arredondada para duas casas, assim como nas entradas. A referência que sempre usa a média mensal mantém a precisão original do cálculo.
 
-- **Fonte:** Kaggle, [Temperature Time-Series for some Brazilian cities](https://www.kaggle.com/datasets/volpatto/temperature-timeseries-for-some-brazilian-cities). Os dados originais são da NOAA GHCN v4, processados pelo NASA GISTEMP v4.
-- **Arquivo usado:** `station_goiania.csv` (Goiânia, região Centro-Oeste).
-- **Formato original:** uma linha por ano e uma coluna por mês (`JAN` ... `DEC`), com temperaturas médias mensais em °C.
-- **Valores ausentes:** meses sem medição aparecem com o código `999.90`.
+A rede errou, em média, **0,103 °C a menos** que a regra do ano anterior nesse recorte. O MAE é a média dos erros absolutos. Em [abril de 2008](resultados/previsoes_teste.csv), a medição foi 25,50 °C e a rede previu 25,17 °C. O erro foi de aproximadamente 0,33 °C. A regra do ano anterior usou 26,35 °C e errou 0,85 °C.
 
-| Variável                  | Tipo        | Descrição                                      |
-| ------------------------- | ----------- | ---------------------------------------------- |
-| `t-1`, `t-2`, ..., `t-12` | **Entrada** | Temperatura média de 1, 2, ..., 12 meses atrás |
-| `temperatura`             | **Alvo**    | Temperatura média do mês que queremos prever   |
+Em [abril de 2018](dados/serie_tratada.csv), faltou a medição. A série preserva esse mês no calendário e usa 25,11 °C quando precisa dele como entrada. Por exemplo, esse valor entra como `t-2` em junho de 2018. Abril de 2018 fica fora do cálculo das métricas.
 
-## 3. Estrutura do projeto
+## Painel
 
-```
-previsao-temperatura/
-├── dados/
-│   ├── station_goiania.csv      # arquivo original do Kaggle
-│   ├── serie_tratada.csv        # gerado pelo script 1
-│   └── base_modelo.csv          # gerado pelo script 1
-├── modelos/
-│   ├── rede_neural.joblib       # gerado pelo script 2
-│   └── arvore_decisao.joblib    # gerado pelo script 2
-├── resultados/
-│   ├── metricas.csv             # gerado pelo script 3
-│   └── previsoes_teste.csv      # gerado pelo script 3
-├── 1_preprocessamento.py        # limpeza e preparação dos dados
-├── 2_treinamento.py             # treino dos modelos
-├── 3_avaliacao.py               # métricas (MAE, MSE, RMSE, R²)
-├── app.py                       # dashboard (Streamlit)
-└── requirements.txt
-```
+A demonstração histórica começa em novembro de 2019. O painel mostra o desvio em relação à média do mesmo mês no treino. O resultado principal é a previsão de um mês. De 2 a 24 meses, cada previsão alimenta a seguinte. O MAE da tabela foi calculado para um mês à frente e o erro da simulação encadeada fica em aberto.
 
-## 4. Como executar
+## Como executar
 
-**Requisito:** Python 3.10 ou mais novo.
+Na pasta do projeto, use Python 3.12 em um ambiente virtual.
 
-```bash
-# 1. Instalar as bibliotecas
-pip install -r requirements.txt
-
-# 2. Baixar o dataset do Kaggle e colocar o arquivo station_goiania.csv na pasta dados/
-
-# 3. Rodar os scripts, nesta ordem
+```sh
+python -m pip install -r requirements.txt
 python 1_preprocessamento.py
 python 2_treinamento.py
 python 3_avaliacao.py
-
-# 4. Abrir o dashboard (abre sozinho no navegador)
 streamlit run app.py
 ```
 
-> Para usar outra cidade, troque `ARQUIVO_KAGGLE` e `NOME_CIDADE` no início do `1_preprocessamento.py` e rode os 3 scripts de novo.
-
-## 5. O que cada etapa faz
-
-### 5.1 Pré-processamento (`1_preprocessamento.py`)
-
-1. Transforma a tabela de "uma linha por ano" em "uma linha por mês" (série temporal).
-2. Troca o código `999.90` por valor vazio.
-3. Remove os meses vazios do começo e do fim da série.
-4. Preenche os meses vazios do meio com a **média histórica daquele mês**. Por exemplo, um julho faltante recebe a média de todos os julhos. Isso respeita a sazonalidade.
-5. Cria as entradas `t-1` ... `t-12` (janela dos 12 meses anteriores).
-
-A **normalização** (`StandardScaler`) é feita no script 2, dentro do pipeline da rede neural. Assim, a média e o desvio são calculados só com os dados de treino.
-
-### 5.2 Modelos (`2_treinamento.py`)
-
-- **Divisão treino/teste:** 80% dos meses mais antigos para treino, 20% mais recentes para teste. Em série temporal os dados **não são embaralhados**: o modelo aprende com o passado e é testado no "futuro".
-- **Rede Neural (MLP)**, o modelo principal: 12 entradas → 1 camada oculta com 16 neurônios (ReLU) → 1 saída. Usa regularização `alpha=1.0` para evitar overfitting.
-- **Árvore de Decisão**, para comparação: `max_depth=5`.
-
-### 5.3 Avaliação (`3_avaliacao.py`)
-
-Calcula **MAE, MSE, RMSE e R²** nos dados de teste. Também compara com uma **referência sem IA**: "repetir a temperatura do mesmo mês do ano anterior". Um modelo útil precisa ser melhor que essa referência.
-
-### 5.4 Persistência
-
-Os modelos treinados são salvos com `joblib` em `modelos/*.joblib`. O dashboard carrega esses arquivos, sem precisar treinar de novo.
-
-### 5.5 Dashboard (`app.py`)
-
-- **Previsão:** gráfico e tabela dos próximos 1 a 24 meses, com comparação com a média histórica e alertas de "acima/abaixo do normal".
-- **Desempenho do modelo:** tabela de métricas e gráfico real × previsto.
-- **Histórico e insights:** série completa, média por mês do ano (sazonalidade) e média por década (tendência de aquecimento).
-- **Simulador:** o usuário edita as temperaturas dos últimos 12 meses e vê a previsão mudar ao vivo.
-
-## 6. Resultados
-
-Saída do `3_avaliacao.py` (dados de teste):
-
-| Modelo                              | MAE (°C) | MSE   | RMSE (°C) | R²    |
-| ----------------------------------- | -------- | ----- | --------- | ----- |
-| Rede Neural (MLP)                   | 0,728    | 0,850 | 0,922     | 0,595 |
-| Árvore de Decisão                   | 0,830    | 1,124 | 1,060     | 0,465 |
-| Referência (repetir o ano anterior) | 0,767    | 0,926 | 0,962     | 0,559 |
-
-A Rede Neural teve o menor erro: em média, erra cerca de 0,7 °C. Ela foi um pouco melhor que a referência, e a Árvore de Decisão ficou abaixo da referência. A temperatura mensal é muito sazonal, então repetir o valor do ano anterior já é uma referência difícil de bater.
-
-## 7. Limitações e melhorias futuras
-
-- O dataset termina em 2019, então a "previsão futura" começa logo depois do último mês com dados.
-- O modelo usa só a temperatura passada. Outras variáveis (chuva, umidade, El Niño) poderiam melhorar a previsão.
-- Na previsão de vários meses, cada previsão vira entrada da próxima, então o erro vai se acumulando.
-- Melhorias possíveis: testar outras configurações da rede, usar validação cruzada para séries temporais (`TimeSeriesSplit`) e testar redes recorrentes (LSTM).
-
-## 8. Tecnologias
-
-Python · pandas · scikit-learn · joblib · Streamlit · Plotly
+Os scripts geram os dados tratados em `dados/`, os modelos em `modelos/` e as previsões e métricas em `resultados/`. O [roteiro da apresentação](roteiro_apresentacao.md) segue esses mesmos exemplos.
