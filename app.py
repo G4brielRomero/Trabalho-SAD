@@ -1,12 +1,4 @@
-"""
-DASHBOARD - Previsão de Temperatura Média Mensal
-=================================================
-
-Antes de abrir o dashboard, rode os scripts 1, 2 e 3 (nessa ordem).
-
-Como rodar:
-    streamlit run app.py
-"""
+"""Painel de previsão mensal. Gere os artefatos com os scripts 1, 2 e 3."""
 
 import joblib
 import pandas as pd
@@ -15,59 +7,44 @@ import streamlit as st
 
 from configuracao import COLUNAS_ENTRADA, DATA_CORTE, REFERENCIA_ANO, REFERENCIA_MEDIA
 
-st.set_page_config(page_title="Previsão de Temperatura", page_icon="🌡️", layout="wide")
+st.set_page_config(page_title="Temperatura mensal em Goiânia", layout="wide")
 
-# Cores dos gráficos
-AZUL = "#2a78d6"     # dados reais / histórico
-LARANJA = "#eb6834"  # previsões do modelo
-
+AZUL = "#24528A"
+LARANJA = "#B64A13"
+VERDE = "#0F766E"
 ARQUIVOS_MODELOS = {
     "Rede Neural (MLP)": "modelos/rede_neural.joblib",
     "Árvore de Decisão": "modelos/arvore_decisao.joblib",
 }
-
-NOMES_MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
-               "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
-
-
-# =================================================================
-# CARREGAR OS DADOS (gerados pelos scripts 1 e 3)
-# =================================================================
-serie = pd.read_csv("dados/serie_tratada.csv", parse_dates=["data"])
-metricas = pd.read_csv("resultados/metricas.csv")
-previsoes_teste = pd.read_csv("resultados/previsoes_teste.csv", parse_dates=["data"])
-
-cidade = serie["cidade"].iloc[0]
-serie["mes"] = serie["data"].dt.month
-serie["ano"] = serie["data"].dt.year
-
-media_de_cada_mes = serie.groupby("mes")["media_treino"].first()
-inicio_referencia = serie["data"].min()
-fim_referencia = pd.Timestamp(DATA_CORTE) - pd.DateOffset(months=1)
-periodo_referencia = f"{inicio_referencia:%m/%Y} a {fim_referencia:%m/%Y}"
+MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+         "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+FONTE = "https://www.kaggle.com/datasets/volpatto/temperature-timeseries-for-some-brazilian-cities"
 
 
-# =================================================================
-# FUNÇÃO PARA DESENHAR GRÁFICOS DE LINHA (com Plotly)
-# =================================================================
+def decimal(valor, casas=2, sinal=False):
+    formato = f"+.{casas}f" if sinal else f".{casas}f"
+    return format(valor, formato).replace(".", ",")
+
+
 def grafico_de_linhas(tabela, colunas, cores, formato_data="%m/%Y"):
-    fig = px.line(tabela, x="data", y=colunas, color_discrete_sequence=cores,
-                  labels={"data": "Mês", "value": "Temperatura (°C)", "variable": ""})
+    fig = px.line(
+        tabela, x="data", y=colunas, color_discrete_sequence=cores,
+        labels={"data": "Mês", "value": "Temperatura (°C)", "variable": ""},
+    )
     fig.update_xaxes(tickformat=formato_data, hoverformat="%m/%Y")
-    fig.update_layout(hovermode="x unified", legend=dict(orientation="h", y=1.12))
+    fig.update_traces(line_width=2.5, hovertemplate="%{y:.2f} °C", connectgaps=False)
+    fig.update_layout(
+        height=335, margin=dict(l=12, r=18, t=45, b=18), hovermode="x unified",
+        legend=dict(orientation="h", y=1.03, yanchor="bottom", x=0),
+    )
     return fig
 
 
-# =================================================================
-# FUNÇÃO DE PREVISÃO
-# O modelo prevê 1 mês por vez. Para prever vários meses, usamos a
-# própria previsão como entrada do mês seguinte (previsão recursiva).
-# =================================================================
 def prever_proximos_meses(modelo, ultimas_temperaturas, quantidade_meses):
     temperaturas = list(ultimas_temperaturas)
     previsoes = []
     for _ in range(quantidade_meses):
-        # t-1 = último valor da lista, t-2 = penúltimo, ..., t-12
+        # t-1 recebe o mês mais recente e t-12, o mais antigo.
         entrada = pd.DataFrame([temperaturas[-len(COLUNAS_ENTRADA):][::-1]], columns=COLUNAS_ENTRADA)
         valor_previsto = modelo.predict(entrada)[0]
         previsoes.append(valor_previsto)
@@ -75,99 +52,78 @@ def prever_proximos_meses(modelo, ultimas_temperaturas, quantidade_meses):
     return previsoes
 
 
-# =================================================================
-# BARRA LATERAL (filtros)
-# =================================================================
-st.sidebar.title("⚙️ Configurações")
+serie = pd.read_csv("dados/serie_tratada.csv", parse_dates=["data"])
+metricas = pd.read_csv("resultados/metricas.csv").set_index("Modelo")
+teste = pd.read_csv("resultados/previsoes_teste.csv", parse_dates=["data"]).set_index("data")
+serie["mes"] = serie["data"].dt.month
+serie["ano"] = serie["data"].dt.year
 
-nome_modelo = st.sidebar.radio("Modelo", list(ARQUIVOS_MODELOS.keys()))
-meses_para_prever = st.sidebar.slider("Horizonte da simulação (meses)", min_value=1, max_value=24, value=1)
+media_por_mes = serie.groupby("mes")["media_treino"].first()
+fim_referencia = pd.Timestamp(DATA_CORTE) - pd.DateOffset(months=1)
+periodo_referencia = f"{serie['data'].min():%m/%Y} a {fim_referencia:%m/%Y}"
+ultima_data = serie["data"].iloc[-1]
+proximo_mes = ultima_data + pd.DateOffset(months=1)
+ultimas_12 = serie["temperatura_entrada"].tail(len(COLUNAS_ENTRADA))
 
-ano_min, ano_max = int(serie["ano"].min()), int(serie["ano"].max())
-anos = st.sidebar.slider("Período do histórico", ano_min, ano_max, (ano_min, ano_max))
-
-st.sidebar.markdown("---")
-st.sidebar.caption("Dados: Kaggle — *Temperature Time-Series for some Brazilian cities* "
-                   "(NASA GISTEMP / NOAA GHCN).")
+st.sidebar.header("Modelo da demonstração")
+nome_modelo = st.sidebar.radio("Modelo", list(ARQUIVOS_MODELOS), label_visibility="collapsed")
+st.sidebar.caption("A seleção atualiza a previsão, a análise de erros e o simulador.")
+st.sidebar.divider()
+st.sidebar.markdown(f"[Fonte dos dados no Kaggle]({FONTE})")
+st.sidebar.caption("UFMS · Sistemas de Apoio à Decisão")
 
 modelo = joblib.load(ARQUIVOS_MODELOS[nome_modelo])
+previsto = prever_proximos_meses(modelo, ultimas_12, 1)[0]
+media_referencia = media_por_mes[proximo_mes.month]
+desvio = previsto - media_referencia
 
-
-# =================================================================
-# PREVISÃO DOS PRÓXIMOS MESES
-# =================================================================
-ultimas_12 = serie["temperatura_entrada"].iloc[-len(COLUNAS_ENTRADA):]
-valores_previstos = prever_proximos_meses(modelo, ultimas_12, meses_para_prever)
-
-ultima_data = serie["data"].iloc[-1]
-datas_futuras = pd.date_range(ultima_data + pd.DateOffset(months=1), periods=meses_para_prever, freq="MS")
-
-previsao = pd.DataFrame({"data": datas_futuras, "previsao": valores_previstos})
-previsao["media_historica"] = previsao["data"].dt.month.map(media_de_cada_mes)
-previsao["diferenca"] = previsao["previsao"] - previsao["media_historica"]
-
-
-# =================================================================
-# CABEÇALHO E INDICADORES
-# =================================================================
-st.title(f"🌡️ Previsão de Temperatura Média Mensal — {cidade}")
+st.caption("SISTEMAS DE APOIO À DECISÃO · ESTUDO HISTÓRICO")
+st.title(f"Temperatura mensal em {serie['cidade'].iloc[0]}")
+st.markdown("**Vale revisar o plano de ventilação para o próximo mês?**")
 st.caption(
-    f"Demonstração histórica. Os dados vão até {ultima_data:%m/%Y} e a previsão começa "
-    f"em {datas_futuras[0]:%m/%Y}. Modelo selecionado: **{nome_modelo}**."
+    f"Exercício de planejamento mensal. Última medição em {ultima_data:%m/%Y} "
+    f"e primeira previsão em {proximo_mes:%m/%Y}. Modelo selecionado **{nome_modelo}**."
 )
 
-mae = metricas.loc[metricas["Modelo"] == nome_modelo, "MAE"].iloc[0]
-primeira = previsao.iloc[0]
-
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Média de toda a série medida", f"{serie['temperatura'].mean():.1f} °C")
-col2.metric(f"Último registro ({ultima_data:%m/%Y})", f"{serie['temperatura'].iloc[-1]:.1f} °C")
-col3.metric(f"Previsão para {primeira['data']:%m/%Y}", f"{primeira['previsao']:.1f} °C",
-            delta=f"{primeira['diferenca']:+.1f} °C vs. média do mês no treino", delta_color="off")
-col4.metric("MAE no teste de um mês", f"{mae:.2f} °C")
-
-
-# =================================================================
-# ABAS
-# =================================================================
 aba_previsao, aba_modelo, aba_historico, aba_simulador = st.tabs(
-    ["📈 Previsão", "🎯 Desempenho do modelo", "📊 Histórico e insights", "🧪 Simulador"]
+    ["Previsão", "Desempenho", "Histórico", "Simulador"]
 )
 
-# -----------------------------------------------------------------
-# ABA 1 - PREVISÃO
-# -----------------------------------------------------------------
 with aba_previsao:
-    if meses_para_prever == 1:
-        st.subheader("Previsão de um mês à frente")
+    col1, col2, col3 = st.columns(3)
+    col1.metric(f"Previsão para {proximo_mes:%m/%Y}", f"{decimal(previsto)} °C", border=True)
+    col2.metric("Média do mês no treino", f"{decimal(media_referencia)} °C", border=True)
+    col3.metric("Desvio previsto", f"{decimal(desvio, sinal=True)} °C", border=True)
+
+    if desvio >= 0:
+        leitura = "Use o desvio acima da média como sinal para revisar o plano mensal de ventilação."
     else:
-        st.subheader(f"Simulação encadeada de {meses_para_prever} meses")
-        st.caption("Cada previsão alimenta o mês seguinte. O MAE exibido foi medido para um mês à frente.")
-    st.caption(f"Média histórica de referência: medições de {periodo_referencia}.")
+        leitura = "Use o desvio abaixo da média para reavaliar a necessidade de reforço da ventilação."
+    st.info(f"{leitura} Para decisões do dia a dia, consulte previsões atualizadas.")
 
-    # Últimos 3 anos do histórico + previsão no mesmo gráfico
-    historico = serie[["data", "temperatura"]].tail(36).rename(columns={"temperatura": "Histórico"})
-    rotulo = "Previsão" if meses_para_prever == 1 else "Simulação"
-    futuro = previsao[["data", "previsao"]].rename(columns={"previsao": rotulo})
-    # repete o último ponto real na linha de previsão, só para as linhas se ligarem
-    ligacao = pd.DataFrame({"data": [ultima_data], rotulo: [serie["temperatura"].iloc[-1]]})
-    grafico = pd.concat([historico, ligacao, futuro]).groupby("data").first().reset_index()
-
-    st.plotly_chart(grafico_de_linhas(grafico, ["Histórico", rotulo], [AZUL, LARANJA]))
-
-    tabela = pd.DataFrame({
-        "Mês": previsao["data"].dt.strftime("%m/%Y"),
-        f"{rotulo} (°C)": previsao["previsao"].round(1),
-        "Média histórica do mês (°C)": previsao["media_historica"].round(1),
-        "Diferença (°C)": previsao["diferenca"].round(1),
+    st.subheader("Medições recentes e próximo mês")
+    historico = serie[["data", "temperatura", "media_treino"]].tail(24).rename(
+        columns={"temperatura": "Medição", "media_treino": "Média do mês no treino"}
+    )
+    futuro = pd.DataFrame({
+        "data": [proximo_mes], "Média do mês no treino": [media_referencia]
     })
-    st.dataframe(tabela, hide_index=True, width="stretch")
+    fig = grafico_de_linhas(
+        pd.concat([historico, futuro], ignore_index=True),
+        ["Medição", "Média do mês no treino"], [AZUL, VERDE],
+    )
+    fig.update_traces(selector={"name": "Média do mês no treino"}, line_dash="dot")
+    fig.add_scatter(
+        x=[proximo_mes], y=[previsto], name="Previsão", mode="markers",
+        marker=dict(color=LARANJA, size=13, symbol="diamond"),
+        hovertemplate="%{y:.2f} °C",
+    )
+    fig.update_xaxes(range=[historico["data"].min(), proximo_mes + pd.Timedelta(days=20)])
+    st.plotly_chart(fig)
+    st.caption(f"Referência sazonal calculada com medições de {periodo_referencia}.")
 
-
-# -----------------------------------------------------------------
-# ABA 2 - DESEMPENHO DO MODELO
-# -----------------------------------------------------------------
 with aba_modelo:
+    previsoes_teste = teste.reset_index()
     st.subheader("Métricas nos dados de teste")
     inicio_teste = previsoes_teste["data"].min()
     fim_teste = previsoes_teste["data"].max()
@@ -175,7 +131,7 @@ with aba_modelo:
         f"Previsões de um mês à frente para {len(previsoes_teste)} meses com medição "
         f"de {inicio_teste:%m/%Y} a {fim_teste:%m/%Y}."
     )
-    st.dataframe(metricas, hide_index=True, width="stretch")
+    st.dataframe(metricas.reset_index(), hide_index=True, width="stretch")
 
     st.markdown(
         "- **MAE**: em média, quantos °C a previsão erra.\n"
@@ -192,6 +148,8 @@ with aba_modelo:
 # ABA 3 - HISTÓRICO E INSIGHTS
 # -----------------------------------------------------------------
 with aba_historico:
+    ano_min, ano_max = int(serie["ano"].min()), int(serie["ano"].max())
+    anos = st.slider("Período exibido no histórico", ano_min, ano_max, (ano_min, ano_max))
     filtrado = serie[(serie["ano"] >= anos[0]) & (serie["ano"] <= anos[1])]
 
     st.subheader(f"Série histórica ({anos[0]} a {anos[1]})")
@@ -205,7 +163,7 @@ with aba_historico:
         st.subheader("Média por mês do ano")
         por_mes = filtrado.groupby("mes")["temperatura"].mean().dropna()
         # "01 Jan", "02 Fev"... o número na frente mantém a ordem correta no gráfico
-        por_mes.index = [f"{m:02d} {NOMES_MESES[m - 1]}" for m in por_mes.index]
+        por_mes.index = [f"{m:02d} {MESES[m - 1]}" for m in por_mes.index]
         if por_mes.empty:
             st.info("O período selecionado não tem temperaturas medidas.")
         else:
@@ -227,29 +185,43 @@ with aba_historico:
     with st.expander("Ver tabela de dados tratados"):
         st.dataframe(filtrado[["data", "temperatura", "temperatura_entrada", "preenchido"]], hide_index=True, width="stretch")
 
-# -----------------------------------------------------------------
-# ABA 4 - SIMULADOR
-# -----------------------------------------------------------------
 with aba_simulador:
-    st.subheader("Simulador: teste o modelo com seus próprios valores")
-    st.write("Edite as temperaturas dos últimos 12 meses e veja como a previsão do modelo para o "
-             "mês seguinte muda. Exemplo: aumente os 3 últimos meses em 2 °C.")
-
+    st.subheader("Cenário com entradas editáveis")
+    st.write(
+        f"Edite as temperaturas para observar a resposta do modelo. "
+        f"Experimente somar 2 °C ao valor de {ultima_data:%m/%Y}."
+    )
+    meses_para_prever = st.slider("Horizonte do cenário (meses)", 1, 24, 1)
+    st.caption(
+        "A partir do segundo mês, cada previsão alimenta a seguinte. "
+        "As métricas do teste cobrem apenas o primeiro passo."
+    )
+    resultado_cenario = st.empty()
     entrada = pd.DataFrame({
         "Mês": serie["data"].tail(len(COLUNAS_ENTRADA)).dt.strftime("%m/%Y").values,
         "Temperatura (°C)": ultimas_12.values,
     })
-    editado = st.data_editor(entrada, hide_index=True, disabled=["Mês"], width="stretch", height=460)
-
+    editado = st.data_editor(
+        entrada, hide_index=True, disabled=["Mês"], width="stretch", height=458,
+        key="cenario_temperaturas",
+    )
     temperaturas = editado["Temperatura (°C)"]
     if temperaturas.isna().any():
-        st.info("Preencha as 12 temperaturas para calcular a previsão.")
+        resultado_cenario.info("Preencha as 12 temperaturas para calcular o cenário.")
     else:
-        previsto = prever_proximos_meses(modelo, temperaturas, 1)[0]
-        proximo_mes = datas_futuras[0]
-        st.metric(
-            f"Previsão do modelo ({nome_modelo}) para {proximo_mes:%m/%Y}",
-            f"{previsto:.2f} °C",
-            delta=f"{previsto - media_de_cada_mes[proximo_mes.month]:+.2f} °C vs. média do mês no treino",
-            delta_color="off",
+        valores = prever_proximos_meses(modelo, temperaturas, meses_para_prever)
+        datas = pd.date_range(proximo_mes, periods=meses_para_prever, freq="MS")
+        medias = media_por_mes.loc[datas.month].to_numpy()
+        resultado_cenario.metric(
+            f"Previsão do cenário para {proximo_mes:%m/%Y}", f"{decimal(valores[0])} °C",
+            delta=f"{decimal(valores[0] - previsto, sinal=True)} °C vs. previsão com as entradas originais",
+            delta_color="off", border=True,
         )
+        if meses_para_prever > 1:
+            tabela = pd.DataFrame({
+                "Mês": datas.strftime("%m/%Y"),
+                "Cenário (°C)": valores,
+                "Média do mês no treino (°C)": medias,
+                "Desvio (°C)": valores - medias,
+            })
+            st.dataframe(tabela.round(2), hide_index=True, width="stretch")
