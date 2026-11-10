@@ -37,11 +37,32 @@ Em [abril de 2008](resultados/previsoes_teste.csv), a medição foi de 25,50 °C
 
 ## Como reproduzir
 
-Execute a partir da pasta que contém este README. O fluxo completo foi conferido com Python 3.14 e as versões de `requirements.txt`.
+Execute a partir da pasta que contém este README. O fluxo completo foi conferido com Python 3.14 e as versões de `requirements.txt`. Só a criação e a ativação do ambiente virtual mudam conforme o sistema.
+
+**Linux e macOS**
 
 ```sh
 python3.14 -m venv .venv
 source .venv/bin/activate
+```
+
+**Windows (Prompt de Comando)**
+
+```bat
+py -3.14 -m venv .venv
+.venv\Scripts\activate.bat
+```
+
+**Windows (PowerShell)**
+
+```powershell
+py -3.14 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Se o PowerShell bloquear o script de ativação, execute `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` uma vez e tente de novo. Com o ambiente ativo, o prompt começa com `(.venv)`. Os comandos a seguir são iguais em todos os sistemas:
+
+```sh
 python -m pip install -r requirements.txt
 python 1_preprocessamento.py
 python 2_treinamento.py
@@ -49,4 +70,18 @@ python 3_avaliacao.py
 python -m streamlit run app.py
 ```
 
-Os scripts geram a série e a matriz de entradas em `dados/`, os dois modelos em `modelos/` e as previsões e métricas em `resultados/`. O [roteiro da apresentação](roteiro_apresentacao.md) usa os mesmos exemplos do painel.
+O painel abre em `http://localhost:8501`. Para encerrar, use `Ctrl+C` no terminal.
+
+Os scripts geram a série e a matriz de entradas em `dados/`, os dois modelos em `modelos/` e as previsões e métricas em `resultados/`.
+
+## Onde cada critério de avaliação é atendido
+
+| Critério | Pontos | Onde está |
+| --- | ---: | --- |
+| Pré-processamento dos dados | 1,0 | [`1_preprocessamento.py`](1_preprocessamento.py) troca o valor `999.90` por medição ausente, preenche as lacunas das entradas com a média do mês no treino e cria as entradas `t-1` a `t-12`. A padronização (`StandardScaler`) fica no pipeline da rede em [`2_treinamento.py`](2_treinamento.py). |
+| Modelo preditivo | 3,0 | [`2_treinamento.py`](2_treinamento.py) treina uma rede neural (MLP) e uma árvore de decisão. A validação usa separação cronológica: treino até março de 2008 e teste de abril de 2008 a outubro de 2019. |
+| Avaliação do modelo | 1,0 | [`3_avaliacao.py`](3_avaliacao.py) gera [`resultados/metricas.csv`](resultados/metricas.csv) com MAE, MSE, RMSE e R². A tabela compara os modelos com duas referências simples. As previsões mês a mês ficam em [`resultados/previsoes_teste.csv`](resultados/previsoes_teste.csv). |
+| Persistência do modelo | 1,0 | [`modelos/rede_neural.joblib`](modelos/rede_neural.joblib) e [`modelos/arvore_decisao.joblib`](modelos/arvore_decisao.joblib), carregados pela avaliação e pelo painel. |
+| Dashboard interativo | — | [`app.py`](app.py), em Streamlit, tem as abas Previsão, Desempenho, Histórico e Simulador. |
+| Reprodução integral | — | Scripts numerados na ordem de execução, versões fixas em [`requirements.txt`](requirements.txt) e os passos da seção anterior. |
+| Apresentação | 4,0 | Ao vivo, com contexto do problema, descrição do dataset, modelos testados e demonstração do painel. |
